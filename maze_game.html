@@ -1,0 +1,479 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maze Challenge</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .share-btn {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+        }
+
+        .timer {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .maze-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        canvas {
+            border: 3px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .instructions {
+            text-align: center;
+            color: #666;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .completion-message {
+            text-align: center;
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: bold;
+            display: none;
+        }
+
+        .url-share {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border: 1px solid #dee2e6;
+            display: none;
+        }
+
+        .url-share input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🎯 Maze Challenge</h1>
+
+    <div class="controls">
+        <button id="newMaze" onclick="generateNewMaze()">🎲 New Maze</button>
+        <div class="timer" id="timer">Time: 0.0s</div>
+        <button id="shareBtn" class="share-btn" onclick="shareMaze()" style="display: none;">🔗 Share This Maze</button>
+    </div>
+
+    <div class="maze-container">
+        <canvas id="mazeCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <div class="completion-message" id="completionMessage">
+        🎉 Congratulations! You completed the maze!
+    </div>
+
+    <div class="url-share" id="urlShare">
+        <p><strong>Share this maze with friends:</strong></p>
+        <input type="text" id="shareUrl" readonly onclick="this.select()">
+        <p><small>Click the URL to select it, then copy and share!</small></p>
+    </div>
+
+    <div class="instructions">
+        <p>🎮 Use arrow keys or WASD to move through the maze</p>
+        <p>⭐ Collect golden stars to remove 5 seconds from your time!</p>
+        <p>🏁 Get from the green start to the red finish as fast as you can!</p>
+    </div>
+</div>
+
+<script>
+    let maze = [];
+    let pickups = [];
+    let playerX = 1, playerY = 1;
+    let startTime = null;
+    let gameActive = false;
+    let mazeWidth = 25, mazeHeight = 25;
+    let cellSize = 24;
+    let currentSeed = null;
+    let timeBonus = 0;
+
+    const canvas = document.getElementById('mazeCanvas');
+    const ctx = canvas.getContext('2d');
+    const timer = document.getElementById('timer');
+
+    // Simple random number generator with seed
+    class SeededRandom {
+        constructor(seed) {
+            this.seed = seed;
+        }
+
+        next() {
+            this.seed = (this.seed * 9301 + 49297) % 233280;
+            return this.seed / 233280;
+        }
+    }
+
+    // Generate maze using recursive backtracking
+    function generateMaze(seed) {
+        const rng = new SeededRandom(seed);
+        maze = Array(mazeHeight).fill().map(() => Array(mazeWidth).fill(1));
+
+        const stack = [];
+        let currentX = 1, currentY = 1;
+        maze[currentY][currentX] = 0;
+
+        const directions = [[0, 2], [2, 0], [0, -2], [-2, 0]];
+
+        while (true) {
+            const neighbors = [];
+
+            for (let [dx, dy] of directions) {
+                const newX = currentX + dx;
+                const newY = currentY + dy;
+
+                if (newX > 0 && newX < mazeWidth - 1 &&
+                    newY > 0 && newY < mazeHeight - 1 &&
+                    maze[newY][newX] === 1) {
+                    neighbors.push([newX, newY, currentX + dx/2, currentY + dy/2]);
+                }
+            }
+
+            if (neighbors.length > 0) {
+                const [newX, newY, wallX, wallY] = neighbors[Math.floor(rng.next() * neighbors.length)];
+                maze[newY][newX] = 0;
+                maze[wallY][wallX] = 0;
+                stack.push([currentX, currentY]);
+                currentX = newX;
+                currentY = newY;
+            } else if (stack.length > 0) {
+                [currentX, currentY] = stack.pop();
+            } else {
+                break;
+            }
+        }
+
+        // Ensure finish is accessible
+        maze[mazeHeight - 2][mazeWidth - 2] = 0;
+
+        // Generate pickups using the same RNG seed
+        generatePickups(rng);
+    }
+
+    function generatePickups(rng) {
+        pickups = [];
+        const openCells = [];
+
+        // Find all open cells (excluding start and finish)
+        for (let y = 1; y < mazeHeight - 1; y++) {
+            for (let x = 1; x < mazeWidth - 1; x++) {
+                if (maze[y][x] === 0 &&
+                    !(x === 1 && y === 1) && // not start
+                    !(x === mazeWidth - 2 && y === mazeHeight - 2)) { // not finish
+                    openCells.push([x, y]);
+                }
+            }
+        }
+
+        // Place 5-8 pickups randomly using seeded RNG
+        const numPickups = Math.floor(rng.next() * 4) + 5; // 5-8 pickups
+        const selectedCells = [];
+
+        for (let i = 0; i < numPickups && openCells.length > 0; i++) {
+            const index = Math.floor(rng.next() * openCells.length);
+            const [x, y] = openCells.splice(index, 1)[0];
+            pickups.push({ x, y, collected: false });
+        }
+    }
+
+    function drawMaze() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let y = 0; y < mazeHeight; y++) {
+            for (let x = 0; x < mazeWidth; x++) {
+                if (maze[y][x] === 1) {
+                    ctx.fillStyle = '#2c3e50';
+                    ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                }
+            }
+        }
+
+        // Draw pickups (golden stars)
+        pickups.forEach(pickup => {
+            if (!pickup.collected) {
+                drawStar(pickup.x * cellSize + cellSize/2, pickup.y * cellSize + cellSize/2, 8, '#f1c40f');
+            }
+        });
+
+        // Draw start (green)
+        ctx.fillStyle = '#27ae60';
+        ctx.fillRect(cellSize, cellSize, cellSize, cellSize);
+
+        // Draw finish (red)
+        ctx.fillStyle = '#e74c3c';
+        ctx.fillRect((mazeWidth - 2) * cellSize, (mazeHeight - 2) * cellSize, cellSize, cellSize);
+
+        // Draw player (blue)
+        ctx.fillStyle = '#3498db';
+        ctx.fillRect(playerX * cellSize + 2, playerY * cellSize + 2, cellSize - 4, cellSize - 4);
+    }
+
+    function drawStar(cx, cy, radius, color) {
+        ctx.fillStyle = color;
+        ctx.strokeStyle = '#f39c12';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        for (let i = 0; i < 5; i++) {
+            const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+            const x = cx + Math.cos(angle) * radius;
+            const y = cy + Math.sin(angle) * radius;
+
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+
+            const innerAngle = ((i + 0.5) * 2 * Math.PI) / 5 - Math.PI / 2;
+            const innerX = cx + Math.cos(innerAngle) * (radius * 0.4);
+            const innerY = cy + Math.sin(innerAngle) * (radius * 0.4);
+            ctx.lineTo(innerX, innerY);
+        }
+
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    function movePlayer(dx, dy) {
+        if (!gameActive) return;
+
+        const newX = playerX + dx;
+        const newY = playerY + dy;
+
+        if (newX >= 0 && newX < mazeWidth &&
+            newY >= 0 && newY < mazeHeight &&
+            maze[newY][newX] === 0) {
+            playerX = newX;
+            playerY = newY;
+
+            // Check for pickup collection
+            pickups.forEach(pickup => {
+                if (!pickup.collected && pickup.x === playerX && pickup.y === playerY) {
+                    pickup.collected = true;
+                    timeBonus += 5; // Add five seconds bonus
+
+                    // Visual feedback
+                    showPickupMessage();
+                }
+            });
+
+            // Check if reached finish
+            if (playerX === mazeWidth - 2 && playerY === mazeHeight - 2) {
+                gameActive = false;
+                const endTime = Date.now();
+                const rawTime = (endTime - startTime) / 1000;
+                const finalTime = Math.max(0, rawTime - timeBonus); // Apply time bonus
+
+                document.getElementById('completionMessage').style.display = 'block';
+                document.getElementById('shareBtn').style.display = 'inline-block';
+
+                const bonusText = timeBonus > 0 ? ` (${rawTime.toFixed(1)}s - ${timeBonus}s bonus)` : '';
+                timer.textContent = `Final Time: ${finalTime.toFixed(1)}s${bonusText}`;
+            }
+
+            drawMaze();
+        }
+    }
+
+    function showPickupMessage() {
+        // Create temporary message element
+        const message = document.createElement('div');
+        message.textContent = '⭐ -5 seconds!';
+        message.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: linear-gradient(45deg, #f1c40f, #f39c12);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 25px;
+                font-weight: bold;
+                font-size: 18px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+                z-index: 1000;
+                animation: pickupPulse 1s ease-out;
+            `;
+
+        // Add animation keyframes
+        if (!document.getElementById('pickupStyles')) {
+            const style = document.createElement('style');
+            style.id = 'pickupStyles';
+            style.textContent = `
+                    @keyframes pickupPulse {
+                        0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+                        50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+                        100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+                    }
+                `;
+            document.head.appendChild(style);
+        }
+
+        document.body.appendChild(message);
+
+        // Remove message after animation
+        setTimeout(() => {
+            document.body.removeChild(message);
+        }, 1000);
+    }
+
+    function updateTimer() {
+        if (gameActive) {
+            const currentTime = Date.now();
+            const rawElapsed = (currentTime - startTime) / 1000;
+            const adjustedTime = Math.max(0, rawElapsed - timeBonus);
+            const bonusText = timeBonus > 0 ? ` (-${timeBonus}s)` : '';
+            timer.textContent = `Time: ${adjustedTime.toFixed(1)}s${bonusText}`;
+            requestAnimationFrame(updateTimer);
+        }
+    }
+
+    function generateNewMaze() {
+        currentSeed = Math.floor(Math.random() * 1000000);
+        generateMazeFromSeed(currentSeed);
+    }
+
+    function generateMazeFromSeed(seed) {
+        currentSeed = seed;
+        generateMaze(seed);
+        playerX = 1;
+        playerY = 1;
+        gameActive = true;
+        startTime = Date.now();
+        timeBonus = 0;
+
+        document.getElementById('completionMessage').style.display = 'none';
+        document.getElementById('shareBtn').style.display = 'none';
+        document.getElementById('urlShare').style.display = 'none';
+
+        drawMaze();
+        updateTimer();
+    }
+
+    function shareMaze() {
+        const url = `${window.location.origin}${window.location.pathname}?maze=${currentSeed}`;
+        document.getElementById('shareUrl').value = url;
+        document.getElementById('urlShare').style.display = 'block';
+    }
+
+    // Keyboard controls
+    document.addEventListener('keydown', (e) => {
+        switch(e.code) {
+            case 'ArrowUp':
+            case 'KeyW':
+                e.preventDefault();
+                movePlayer(0, -1);
+                break;
+            case 'ArrowDown':
+            case 'KeyS':
+                e.preventDefault();
+                movePlayer(0, 1);
+                break;
+            case 'ArrowLeft':
+            case 'KeyA':
+                e.preventDefault();
+                movePlayer(-1, 0);
+                break;
+            case 'ArrowRight':
+            case 'KeyD':
+                e.preventDefault();
+                movePlayer(1, 0);
+                break;
+        }
+    });
+
+    // Initialize
+    window.onload = function() {
+        // Check if there's a maze parameter in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const mazeSeed = urlParams.get('maze');
+
+        if (mazeSeed) {
+            generateMazeFromSeed(parseInt(mazeSeed));
+        } else {
+            generateNewMaze();
+        }
+    };
+</script>
+</body>
+</html>
